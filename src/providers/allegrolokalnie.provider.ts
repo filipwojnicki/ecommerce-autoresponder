@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron, CronExpression, SchedulerRegistry } from '@nestjs/schedule';
 import axios, { AxiosInstance } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { CookieManager } from './cookie-manager.service';
@@ -11,15 +11,20 @@ import {
   type MessagesResponse,
 } from './types';
 
+const AllegroLokalnieCheckInboxCronJobName = 'allegroLokalnieCheckInbox';
+
 @Injectable()
 export class AllegroLokalnieProvider implements IEcommerceProvider {
+  private readonly MAX_FAILURES = 5;
   private lastCheck: Date;
   private readonly api: AxiosInstance;
   private readonly logger = new Logger(AllegroLokalnieProvider.name);
+  private failureCount = 0;
 
   constructor(
     private readonly cookieManager: CookieManager,
     private readonly apiConfig: AllegroApiConfig,
+    private readonly schedulerRegistry: SchedulerRegistry,
   ) {
     this.lastCheck = new Date();
     this.cookieManager.setCookies(this.apiConfig.defaultCookies);
@@ -76,7 +81,7 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
   }
 
   @Cron(CronExpression.EVERY_MINUTE, {
-    name: 'allegroLokalnieCheckInbox',
+    name: AllegroLokalnieCheckInboxCronJobName,
   })
   async checkInbox() {
     try {
@@ -86,15 +91,15 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
       );
 
       if (response.status !== 200) {
-        return;
+        throw new Error('Failed to fetch messages');
       }
 
       if (!response.data.entries) {
-        return;
+        throw new Error('Invalid response data');
       }
 
       if (response.data.entries.length === 0) {
-        return;
+        throw new Error('No messages found');
       }
       this.logger.debug(`Messages count: ${response.data.entries.length}`);
 
@@ -102,19 +107,41 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
         response.data.entries,
       );
 
-      this.logger.log(`Found ${newConversations.length} new messages`);
-
       if (newConversations.length === 0) {
-        return;
+        throw new Error('No new messages found');
       }
 
-      newConversations.map((conversation) => {
-        this.logger.log(
-          `Conversation id ${conversation.id} from ${conversation.subject.participant_name}`,
-        );
-      });
+      this.logger.log(`Found ${newConversations.length} new messages`);
+
+      await Promise.all(
+        newConversations.map((conv) => this.processNewConversation(conv)),
+      );
+
+      this.failureCount = 0;
     } catch (error) {
       this.logger.error('Failed to check messages', error);
+      this.handleFailure();
+    }
+  }
+
+  async processNewConversation(conversation: MessageEntry) {
+    try {
+      this.logger.log(
+        `Conversation id ${conversation.id} from ${conversation.subject.participant_name}`,
+      );
+
+      const messages = await this.readConversationMessages(conversation.id);
+
+      if (!messages.length) {
+        return false;
+      }
+
+      this.logger.debug(messages);
+
+      return true;
+    } catch (error) {
+      this.logger.error('Failed to process conversation:', error);
+      return false;
     }
   }
 
@@ -163,11 +190,11 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
       );
 
       if (response.status !== 200) {
-        return false;
+        return [];
       }
 
       if (!response.data?.messages) {
-        return false;
+        return [];
       }
 
       const { messages } = response.data;
@@ -176,10 +203,14 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
         `Read ${messages.length} messages from conversation ${conversationId}`,
       );
 
+      if (!messages.length) {
+        return [];
+      }
+
       return messages;
     } catch (error) {
       this.logger.error('Failed to read conversation messages', error);
-      return false;
+      return [];
     }
   }
 
@@ -189,6 +220,48 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
         conversation.is_unseen &&
         conversation.subject.participant_type === 'User',
     );
+  }
+
+  private handleFailure() {
+    this.failureCount++;
+    this.logger.warn(
+      `Failure count: ${this.failureCount}/${this.MAX_FAILURES}`,
+    );
+
+    if (this.failureCount >= this.MAX_FAILURES) {
+      try {
+        const job = this.schedulerRegistry.getCronJob(
+          AllegroLokalnieCheckInboxCronJobName,
+        );
+        job.stop();
+        this.logger.error(
+          `${AllegroLokalnieCheckInboxCronJobName} Cron job disabled due to multiple failures`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to stop ${AllegroLokalnieCheckInboxCronJobName} cron job`,
+          error,
+        );
+      }
+    }
+  }
+
+  restartCheckInbox() {
+    try {
+      const job = this.schedulerRegistry.getCronJob(
+        AllegroLokalnieCheckInboxCronJobName,
+      );
+      this.failureCount = 0;
+      job.start();
+      this.logger.log(
+        `${AllegroLokalnieCheckInboxCronJobName} Cron job restarted`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to start ${AllegroLokalnieCheckInboxCronJobName} cron job`,
+        error,
+      );
+    }
   }
 
   supports(provider: string) {
