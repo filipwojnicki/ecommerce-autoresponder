@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression, SchedulerRegistry } from '@nestjs/schedule';
 import axios, { AxiosInstance } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { CookieManager } from './cookie-manager.service';
+import { CookieManager } from './services';
 import { AllegroApiConfig } from './allegro-api.config';
 import {
   type ConversationMessagesResponse,
@@ -138,10 +138,19 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
 
       this.logger.debug(messages);
 
-      return true;
+      const isBuyNowTransaction = messages.some(
+        (conversation) => conversation.type === 'buy_now_transaction_finalized',
+      );
+
+      this.logger.debug(
+        `Conversation id ${conversation.id} is buy now transaction: ${isBuyNowTransaction}`,
+      );
+
+      // if (!isBuyNowTransaction) {
+      //   return false;
+      // }
     } catch (error) {
       this.logger.error('Failed to process conversation:', error);
-      return false;
     }
   }
 

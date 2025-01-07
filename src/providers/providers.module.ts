@@ -1,9 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AllegroLokalnieProvider } from './allegrolokalnie.provider';
-import { ProviderRegistryService } from './provider-registry.service';
 import { AllegroApiConfig } from './allegro-api.config';
-import { CookieManager } from './cookie-manager.service';
+import { CookieManager, ProviderRegistryService } from './services';
 
 @Module({
   imports: [ScheduleModule.forRoot()],

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { IEcommerceProvider } from './types';
+import { IEcommerceProvider } from '../types';
 
 @Injectable()
 export class ProviderRegistryService {
