@@ -10,6 +10,7 @@ import {
   type MessageEntry,
   type MessagesResponse,
 } from './types';
+import { CodeService } from 'src/code';
 
 const AllegroLokalnieCheckInboxCronJobName = 'allegroLokalnieCheckInbox';
 
@@ -19,17 +20,20 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
   private lastCheck: Date;
   private readonly api: AxiosInstance;
   private readonly logger = new Logger(AllegroLokalnieProvider.name);
+  private readonly checkedConversations = new Set<string>();
   private failureCount = 0;
 
   constructor(
     private readonly cookieManager: CookieManager,
     private readonly apiConfig: AllegroApiConfig,
     private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly codeService: CodeService,
   ) {
     this.lastCheck = new Date();
     this.cookieManager.setCookies(this.apiConfig.defaultCookies);
 
     this.api = this.setupAxiosInstance();
+    this.checkInbox();
   }
 
   getName() {
@@ -126,6 +130,10 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
 
   async processNewConversation(conversation: MessageEntry) {
     try {
+      if (this.isConversationChecked(conversation.id)) {
+        return false;
+      }
+
       this.logger.log(
         `Conversation id ${conversation.id} from ${conversation.subject.participant_name}`,
       );
@@ -146,9 +154,29 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
         `Conversation id ${conversation.id} is buy now transaction: ${isBuyNowTransaction}`,
       );
 
-      // if (!isBuyNowTransaction) {
-      //   return false;
-      // }
+      if (!isBuyNowTransaction) {
+        // TODO: Handle request for check transaction as seen, remove conversation blacklist
+        this.markConversationAsChecked(conversation.id);
+        return false;
+      }
+
+      const conversationCodes = await this.codeService.findCodesForConversation(
+        conversation.id,
+      );
+
+      if (conversationCodes.length > 0) {
+        this.logger.debug(
+          `Conversation id ${conversation.id} already has codes assigned`,
+        );
+        return false;
+      }
+
+      const code = await this.codeService.getUniqueCode(conversation.id);
+
+      const message = `Dziekuje za zakup! Kod: ${code?.code ?? 'Brak dostepnych kodow, poczekaj na uzupelnienie'}. ${code?.message ?? ''}`;
+
+      this.sendMessage(conversation.id, message);
+      this.markConversationAsChecked(conversation.id);
     } catch (error) {
       this.logger.error('Failed to process conversation:', error);
     }
@@ -271,6 +299,14 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
         error,
       );
     }
+  }
+
+  private isConversationChecked(conversationId: string) {
+    return this.checkedConversations.has(conversationId);
+  }
+
+  private markConversationAsChecked(conversationId: string) {
+    this.checkedConversations.add(conversationId);
   }
 
   supports(provider: string) {

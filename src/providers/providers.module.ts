@@ -3,9 +3,10 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AllegroLokalnieProvider } from './allegrolokalnie.provider';
 import { AllegroApiConfig } from './allegro-api.config';
 import { CookieManager, ProviderRegistryService } from './services';
+import { CodeModule } from 'src/code';
 
 @Module({
-  imports: [ScheduleModule.forRoot()],
+  imports: [ScheduleModule.forRoot(), CodeModule],
   providers: [
     AllegroLokalnieProvider,
     ProviderRegistryService,
