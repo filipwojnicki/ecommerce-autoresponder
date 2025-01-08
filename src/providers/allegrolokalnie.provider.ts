@@ -20,7 +20,6 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
   private lastCheck: Date;
   private readonly api: AxiosInstance;
   private readonly logger = new Logger(AllegroLokalnieProvider.name);
-  private readonly checkedConversations = new Set<string>();
   private failureCount = 0;
 
   constructor(
@@ -130,10 +129,6 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
 
   async processNewConversation(conversation: MessageEntry) {
     try {
-      if (this.isConversationChecked(conversation.id)) {
-        return false;
-      }
-
       this.logger.log(
         `Conversation id ${conversation.id} from ${conversation.subject.participant_name}`,
       );
@@ -144,7 +139,8 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
         return false;
       }
 
-      this.logger.debug(messages);
+      const lastMessage = messages[messages.length - 1];
+      await this.markMassageAsRead(lastMessage.id).catch(() => null);
 
       const isBuyNowTransaction = messages.some(
         (conversation) => conversation.type === 'buy_now_transaction_finalized',
@@ -154,11 +150,9 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
         `Conversation id ${conversation.id} is buy now transaction: ${isBuyNowTransaction}`,
       );
 
-      if (!isBuyNowTransaction) {
-        // TODO: Handle request for check transaction as seen, remove conversation blacklist
-        this.markConversationAsChecked(conversation.id);
-        return false;
-      }
+      // if (!isBuyNowTransaction) {
+      //   return false;
+      // }
 
       const conversationCodes = await this.codeService.findCodesForConversation(
         conversation.id,
@@ -175,8 +169,7 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
 
       const message = `Dziekuje za zakup! Kod: ${code?.code ?? 'Brak dostepnych kodow, poczekaj na uzupelnienie'}. ${code?.message ?? ''}`;
 
-      this.sendMessage(conversation.id, message);
-      this.markConversationAsChecked(conversation.id);
+      await this.sendMessage(conversation.id, message);
     } catch (error) {
       this.logger.error('Failed to process conversation:', error);
     }
@@ -251,6 +244,23 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
     }
   }
 
+  async markMassageAsRead(messageId: string) {
+    try {
+      const response = await this.api.post(
+        `/chat/messages/${messageId}/mark_as_read`,
+      );
+
+      if (response.status !== 200) {
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      this.logger.error('Failed to mark message as read', error);
+      return false;
+    }
+  }
+
   filterNewConversations(conversations: MessageEntry[]) {
     return conversations.filter(
       (conversation) =>
@@ -299,14 +309,6 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
         error,
       );
     }
-  }
-
-  private isConversationChecked(conversationId: string) {
-    return this.checkedConversations.has(conversationId);
-  }
-
-  private markConversationAsChecked(conversationId: string) {
-    this.checkedConversations.add(conversationId);
   }
 
   supports(provider: string) {
