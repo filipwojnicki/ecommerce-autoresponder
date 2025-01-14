@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { CookieManager, ProviderConfigService } from './';
 import { AllegroApiConfig } from '../configs';
 import {
+  ConversationMessage,
   type ConversationMessagesResponse,
   IEcommerceProvider,
   type MessageEntry,
@@ -196,15 +197,64 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
         return false;
       }
 
+      const offer = await this.codeService.findCodeOfferByTitle(
+        conversation.subject.first_item_title,
+      );
+
+      if (!offer) {
+        this.logger.warn(`${conversation.id}: No available offer found`);
+        await this.sendMessage(
+          conversation.id,
+          'Dziekuje za zakup! Kod zostanie wyslany w ciagu maksymalnie kilku godzin.',
+        );
+        return false;
+      }
+
+      const isCorrectMessageSent =
+        this.checkIfCorrectMessageWasSentToConversation(
+          messages,
+          offer.messageCorrect,
+        );
+
+      this.logger.debug(
+        `Conversation id ${conversation.id} correct message was sent: ${isCorrectMessageSent}`,
+      );
+
+      if (isCorrectMessageSent) {
+        return false;
+      }
+
       const messageWithCode = await this.codeService.getUniqueCodeWithMessage(
         conversation.id,
-        conversation.subject.first_item_title,
+        offer,
       );
 
       await this.sendMessage(conversation.id, messageWithCode);
     } catch (error) {
       this.logger.error('Failed to process conversation:', error);
     }
+  }
+
+  private normalizeText(text: string | null | undefined) {
+    if (!text) return '';
+    return text.toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  checkIfCorrectMessageWasSentToConversation(
+    conversation: ConversationMessage[],
+    correctMessage,
+  ) {
+    if (!conversation?.length || !correctMessage) {
+      return false;
+    }
+
+    const normalizedCorrectMessage = this.normalizeText(correctMessage);
+
+    return conversation.some((message) =>
+      this.normalizeText(message?.content?.body).includes(
+        normalizedCorrectMessage,
+      ),
+    );
   }
 
   async sendMessage(conversationId: string, message: string) {

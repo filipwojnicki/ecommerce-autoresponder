@@ -23,9 +23,21 @@ export class CodeService {
     });
   }
 
-  async getUniqueCodeWithMessage(conversationId: string, title: string) {
-    let retryCount = 0;
+  async findCodeOfferByTitle(title: string) {
     const normalizedTitle = title.trim().toLowerCase();
+
+    return await this.codeOfferModel.findOne({
+      where: {
+        title: {
+          [Op.like]: this.sequelize.literal(`LOWER('%${normalizedTitle}%')`),
+        },
+        used: true,
+      },
+    });
+  }
+
+  async getUniqueCodeWithMessage(conversationId: string, offer: CodeOffer) {
+    let retryCount = 0;
 
     this.logger.debug(`${conversationId}: Getting unique code`);
 
@@ -33,24 +45,6 @@ export class CodeService {
       const transaction = await this.sequelize.transaction();
 
       try {
-        const offer = await this.codeOfferModel.findOne({
-          where: {
-            title: {
-              [Op.like]: this.sequelize.literal(
-                `LOWER('%${normalizedTitle}%')`,
-              ),
-            },
-            used: true,
-          },
-          transaction,
-        });
-
-        if (!offer) {
-          await transaction.rollback();
-          this.logger.warn(`${conversationId}: No available offer found`);
-          return 'Dziekuje za zakup! Kod zostanie wyslany w ciagu maksymalnie kilku godzin.';
-        }
-
         const code = await this.codeModel.findOne({
           where: { used: false, conversationId: null, codeOfferId: offer.id },
           lock: Transaction.LOCK.UPDATE,
