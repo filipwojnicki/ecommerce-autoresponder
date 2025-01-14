@@ -123,7 +123,17 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
       this.failureCount = 0;
     } catch (error) {
       this.logger.error('Failed to check messages', error);
-      this.handleFailure();
+
+      if (error.response?.status !== 200) {
+        this.handleFailure();
+      }
+
+      if (
+        error?.message === 'Failed to fetch messages' ||
+        error?.message === 'Invalid response data'
+      ) {
+        this.handleFailure();
+      }
     }
   }
 
@@ -150,9 +160,9 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
         `Conversation id ${conversation.id} is buy now transaction: ${isBuyNowTransaction}`,
       );
 
-      // if (!isBuyNowTransaction) {
-      //   return false;
-      // }
+      if (!isBuyNowTransaction) {
+        return false;
+      }
 
       const conversationCodes = await this.codeService.findCodesForConversation(
         conversation.id,
@@ -165,11 +175,12 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
         return false;
       }
 
-      const code = await this.codeService.getUniqueCode(conversation.id);
+      const messageWithCode = await this.codeService.getUniqueCodeWithMessage(
+        conversation.id,
+        conversation.subject.first_item_title,
+      );
 
-      const message = `Dziekuje za zakup! Kod: ${code?.code ?? 'Brak dostepnych kodow, poczekaj na uzupelnienie'}. ${code?.message ?? ''}`;
-
-      await this.sendMessage(conversation.id, message);
+      await this.sendMessage(conversation.id, messageWithCode);
     } catch (error) {
       this.logger.error('Failed to process conversation:', error);
     }

@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
-import { Transaction } from 'sequelize';
-import { Code } from '../models';
+import { Op, Transaction } from 'sequelize';
+import { Code, CodeOffer } from '../models';
 
 @Injectable()
 export class CodeService {
@@ -12,6 +12,8 @@ export class CodeService {
   constructor(
     @InjectModel(Code)
     private readonly codeModel: typeof Code,
+    @InjectModel(CodeOffer)
+    private readonly codeOfferModel: typeof CodeOffer,
     private sequelize: Sequelize,
   ) {}
 
@@ -21,8 +23,9 @@ export class CodeService {
     });
   }
 
-  async getUniqueCode(conversationId: string) {
+  async getUniqueCodeWithMessage(conversationId: string, title: string) {
     let retryCount = 0;
+    const normalizedTitle = title.trim().toLowerCase();
 
     this.logger.debug(`${conversationId}: Getting unique code`);
 
@@ -30,8 +33,26 @@ export class CodeService {
       const transaction = await this.sequelize.transaction();
 
       try {
+        const offer = await this.codeOfferModel.findOne({
+          where: {
+            title: {
+              [Op.like]: this.sequelize.literal(
+                `LOWER('%${normalizedTitle}%')`,
+              ),
+            },
+            used: true,
+          },
+          transaction,
+        });
+
+        if (!offer) {
+          await transaction.rollback();
+          this.logger.warn(`${conversationId}: No available offer found`);
+          return 'Dziekuje za zakup! Kod zostanie wyslany w ciagu maksymalnie kilku godzin.';
+        }
+
         const code = await this.codeModel.findOne({
-          where: { used: false, conversationId: null },
+          where: { used: false, conversationId: null, codeOfferId: offer.id },
           lock: Transaction.LOCK.UPDATE,
           transaction,
         });
@@ -40,21 +61,26 @@ export class CodeService {
 
         if (!code) {
           await transaction.rollback();
-          this.logger.warn(`${conversationId}: No available codes found`);
-          return null;
+          this.logger.warn(`${conversationId}: No available code found`);
+          return `Dziekuje za zakup! ${offer.messageFailed}`;
         }
+
+        const message = `Dziekuje za zakup! Kod: ${code.code}. ${offer.messageCorrect ?? ''}`;
 
         await code.update(
           {
             used: true,
+            message,
             conversationId,
           },
           { transaction },
         );
 
         await transaction.commit();
+
         this.logger.debug(`${conversationId}: Reserved code ${code.code}`);
-        return code;
+
+        return message;
       } catch (error) {
         await transaction?.rollback();
         retryCount++;

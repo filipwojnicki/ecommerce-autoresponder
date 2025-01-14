@@ -3,20 +3,18 @@ import {
   Model,
   Table,
   DataType,
-  Index,
   CreatedAt,
   UpdatedAt,
-  ForeignKey,
-  BelongsTo,
+  Index,
+  HasMany,
 } from 'sequelize-typescript';
-import { CodeOffer } from './offer.model';
+import { Code } from './code.model';
 
 @Table({
-  tableName: 'codes',
   timestamps: true,
   charset: 'utf8mb4',
 })
-export class Code extends Model {
+export class CodeOffer extends Model {
   @Column({
     allowNull: false,
     autoIncrement: true,
@@ -25,42 +23,34 @@ export class Code extends Model {
   })
   id: number;
 
-  @Index('code_unique')
+  @Index('codeoffer_title_unique')
   @Column({
     type: DataType.STRING,
     unique: true,
     allowNull: false,
   })
-  code: string;
-
-  @ForeignKey(() => CodeOffer)
-  @Index
-  @Column({
-    type: DataType.INTEGER,
-    allowNull: false,
-  })
-  codeOfferId: number;
-
-  @BelongsTo(() => CodeOffer)
-  codeOffer: CodeOffer;
+  title: string;
 
   @Column({
     type: DataType.TEXT,
     defaultValue: '',
   })
-  message: string;
+  messageCorrect: string;
 
   @Column({
-    allowNull: true,
-    field: 'conversation_id',
+    type: DataType.TEXT,
+    defaultValue: '',
   })
-  conversationId: string;
+  messageFailed: string;
 
   @Column({
-    defaultValue: false,
+    defaultValue: true,
   })
   used: boolean;
 
   @CreatedAt public createdAt: Date;
   @UpdatedAt public updatedAt: Date;
+
+  @HasMany(() => Code)
+  codes: Code[];
 }
