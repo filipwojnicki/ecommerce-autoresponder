@@ -10,9 +10,4 @@ export class AllegroApiConfig {
     Accept: 'application/json, text/plain, */*',
     host: 'allegrolokalnie.pl',
   };
-
-  readonly defaultCookies = {
-    _cmuid: '',
-    _ui_key: '',
-  };
 }

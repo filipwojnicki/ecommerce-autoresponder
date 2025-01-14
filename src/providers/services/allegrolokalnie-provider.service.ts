@@ -1,42 +1,56 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression, SchedulerRegistry } from '@nestjs/schedule';
+import { CronExpression, SchedulerRegistry } from '@nestjs/schedule';
+import { CronJob } from 'cron';
 import axios, { AxiosInstance } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { CookieManager } from './services';
-import { AllegroApiConfig } from './allegro-api.config';
+import { CookieManager, ProviderConfigService } from './';
+import { AllegroApiConfig } from '../configs';
 import {
   type ConversationMessagesResponse,
   IEcommerceProvider,
   type MessageEntry,
   type MessagesResponse,
-} from './types';
+  Provider,
+} from '../types';
 import { CodeService } from 'src/code';
 
 const AllegroLokalnieCheckInboxCronJobName = 'allegroLokalnieCheckInbox';
 
 @Injectable()
-export class AllegroLokalnieProvider implements IEcommerceProvider {
+export class AllegroLokalnieProviderService implements IEcommerceProvider {
   private readonly MAX_FAILURES = 5;
-  private lastCheck: Date;
   private readonly api: AxiosInstance;
-  private readonly logger = new Logger(AllegroLokalnieProvider.name);
+  private readonly logger = new Logger(AllegroLokalnieProviderService.name);
   private failureCount = 0;
 
   constructor(
     private readonly cookieManager: CookieManager,
+    private readonly providerConfigService: ProviderConfigService,
     private readonly apiConfig: AllegroApiConfig,
     private readonly schedulerRegistry: SchedulerRegistry,
     private readonly codeService: CodeService,
   ) {
-    this.lastCheck = new Date();
-    this.cookieManager.setCookies(this.apiConfig.defaultCookies);
-
     this.api = this.setupAxiosInstance();
-    this.checkInbox();
+  }
+
+  async onModuleInit() {
+    const data = await this.providerConfigService.getConfig(this.getName());
+
+    if (!data) {
+      throw new Error('Provider config not found');
+    }
+
+    this.cookieManager.setCookies(data.config.cookies);
+
+    if (data.config.enabled) {
+      this.startCronJob();
+    } else {
+      this.stopCronJob();
+    }
   }
 
   getName() {
-    return 'allegrolokalnie';
+    return Provider.allegroLokalnie;
   }
 
   private setupAxiosInstance(): AxiosInstance {
@@ -83,12 +97,8 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
     );
   }
 
-  @Cron(CronExpression.EVERY_MINUTE, {
-    name: AllegroLokalnieCheckInboxCronJobName,
-  })
   async checkInbox() {
     try {
-      this.logger.log('Starting periodic messages check');
       const response = await this.api.get<MessagesResponse>(
         '/chat/inbox?page_size=20&page=1',
       );
@@ -102,7 +112,8 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
       }
 
       if (response.data.entries.length === 0) {
-        throw new Error('No messages found');
+        this.logger.debug('No messages found');
+        return;
       }
       this.logger.debug(`Messages count: ${response.data.entries.length}`);
 
@@ -111,7 +122,8 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
       );
 
       if (newConversations.length === 0) {
-        throw new Error('No new messages found');
+        this.logger.debug('No new messages found');
+        return;
       }
 
       this.logger.log(`Found ${newConversations.length} new messages`);
@@ -124,8 +136,11 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
     } catch (error) {
       this.logger.error('Failed to check messages', error);
 
-      if (error.response?.status !== 200) {
-        this.handleFailure();
+      if (error.response) {
+        if (error.response.status !== 200) {
+          this.logger.error('Invalid response status', error.response?.status);
+          this.handleFailure();
+        }
       }
 
       if (
@@ -280,6 +295,54 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
     );
   }
 
+  private startCronJob() {
+    try {
+      const job = new CronJob(CronExpression.EVERY_MINUTE, () => {
+        this.checkInbox();
+      });
+
+      this.schedulerRegistry.addCronJob(
+        AllegroLokalnieCheckInboxCronJobName,
+        job,
+      );
+      job.start();
+
+      this.logger.log(
+        `${AllegroLokalnieCheckInboxCronJobName} Cron job started`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to start cron job:', error);
+    }
+  }
+
+  private stopCronJob() {
+    try {
+      const job = this.schedulerRegistry.getCronJob(
+        AllegroLokalnieCheckInboxCronJobName,
+      );
+
+      if (!job) {
+        this.logger.warn('No cron job found to stop');
+        return;
+      }
+
+      if (!job.running) {
+        this.logger.warn('Cron job is already stopped');
+        return;
+      }
+
+      job.stop();
+      this.schedulerRegistry.deleteCronJob(
+        AllegroLokalnieCheckInboxCronJobName,
+      );
+      this.logger.log(
+        `${AllegroLokalnieCheckInboxCronJobName} Cron job stopped`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to stop cron job:', error);
+    }
+  }
+
   private handleFailure() {
     this.failureCount++;
     this.logger.warn(
@@ -287,38 +350,7 @@ export class AllegroLokalnieProvider implements IEcommerceProvider {
     );
 
     if (this.failureCount >= this.MAX_FAILURES) {
-      try {
-        const job = this.schedulerRegistry.getCronJob(
-          AllegroLokalnieCheckInboxCronJobName,
-        );
-        job.stop();
-        this.logger.error(
-          `${AllegroLokalnieCheckInboxCronJobName} Cron job disabled due to multiple failures`,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Failed to stop ${AllegroLokalnieCheckInboxCronJobName} cron job`,
-          error,
-        );
-      }
-    }
-  }
-
-  restartCheckInbox() {
-    try {
-      const job = this.schedulerRegistry.getCronJob(
-        AllegroLokalnieCheckInboxCronJobName,
-      );
-      this.failureCount = 0;
-      job.start();
-      this.logger.log(
-        `${AllegroLokalnieCheckInboxCronJobName} Cron job restarted`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Failed to start ${AllegroLokalnieCheckInboxCronJobName} cron job`,
-        error,
-      );
+      this.stopCronJob();
     }
   }
 

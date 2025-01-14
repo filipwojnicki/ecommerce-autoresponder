@@ -1,24 +1,35 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
-import { AllegroLokalnieProvider } from './allegrolokalnie.provider';
-import { AllegroApiConfig } from './allegro-api.config';
-import { CookieManager, ProviderRegistryService } from './services';
+import { SequelizeModule } from '@nestjs/sequelize';
+import { AllegroApiConfig } from './configs';
 import { CodeModule } from 'src/code';
+import {
+  CookieManager,
+  ProviderConfigService,
+  ProviderRegistryService,
+  AllegroLokalnieProviderService,
+} from './services';
+import { ProviderConfig } from './models';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), CodeModule],
+  imports: [
+    ScheduleModule.forRoot(),
+    CodeModule,
+    SequelizeModule.forFeature([ProviderConfig]),
+  ],
   providers: [
-    AllegroLokalnieProvider,
+    AllegroLokalnieProviderService,
     ProviderRegistryService,
     CookieManager,
     AllegroApiConfig,
+    ProviderConfigService,
   ],
-  exports: [ProviderRegistryService, AllegroLokalnieProvider],
+  exports: [ProviderRegistryService, AllegroLokalnieProviderService],
 })
 export class ProvidersModule {
   constructor(
     private registry: ProviderRegistryService,
-    private allegroLokalnieProvider: AllegroLokalnieProvider,
+    private allegroLokalnieProvider: AllegroLokalnieProviderService,
   ) {
     this.registry.register(this.allegroLokalnieProvider);
   }
