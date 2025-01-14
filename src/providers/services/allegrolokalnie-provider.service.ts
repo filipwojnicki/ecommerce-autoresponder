@@ -40,9 +40,15 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
       throw new Error('Provider config not found');
     }
 
-    this.cookieManager.setCookies(data.config.cookies);
+    const config = JSON.parse(data.config.toString());
 
-    if (data.config.enabled) {
+    if (!config.cookies) {
+      throw new Error('No cookies found in provider config');
+    }
+
+    this.cookieManager.setCookies(config.cookies);
+
+    if (config.enabled) {
       this.startCronJob();
     } else {
       this.stopCronJob();

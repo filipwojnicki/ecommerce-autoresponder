@@ -26,7 +26,7 @@ export class ProviderConfig extends Model {
   provider: Provider;
 
   @Column({
-    type: DataType.JSON,
+    type: DataType.TEXT,
     allowNull: false,
   })
   config: {
