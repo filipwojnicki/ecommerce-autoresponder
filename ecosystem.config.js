@@ -7,7 +7,7 @@ module.exports = {
       exec_mode: 'fork',
       autorestart: false,
       watch: false,
-      max_memory_restart: '300M',
+      max_memory_restart: '200M',
       env_file: '.env',
       min_uptime: '60s',
       max_restarts: 5,
@@ -15,7 +15,11 @@ module.exports = {
       merge_logs: true,
       error_file: 'logs/error.log',
       out_file: 'logs/out.log',
-      node_args: ['--max-old-space-size=256'],
+      node_args: [
+        '--max-old-space-size=150',
+        '--gc-interval=100',
+        '--optimize-for-size',
+      ],
     },
   ],
 };
