@@ -4,6 +4,7 @@ import * as Joi from 'joi';
 import { ProvidersModule } from './providers/providers.module';
 import { DatabaseModule } from './database/database.module';
 import { CodeModule } from './code/code.module';
+import { NotificationModule } from './notification/notification.module';
 import config from './config/config';
 
 @Module({
@@ -28,6 +29,7 @@ import config from './config/config';
     ProvidersModule,
     DatabaseModule,
     CodeModule,
+    NotificationModule,
   ],
 })
 export class AppModule {}

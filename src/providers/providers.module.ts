@@ -10,12 +10,14 @@ import {
   AllegroLokalnieProviderService,
 } from './services';
 import { ProviderConfig } from './models';
+import { NotificationModule } from 'src/notification/notification.module';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     CodeModule,
     SequelizeModule.forFeature([ProviderConfig]),
+    NotificationModule,
   ],
   providers: [
     AllegroLokalnieProviderService,

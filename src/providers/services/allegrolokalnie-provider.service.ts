@@ -14,6 +14,7 @@ import {
   Provider,
 } from '../types';
 import { CodeService } from 'src/code';
+import { NotificationService } from 'src/notification/services';
 
 const AllegroLokalnieCheckInboxCronJobName = 'allegroLokalnieCheckInbox';
 
@@ -30,6 +31,7 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
     private readonly apiConfig: AllegroApiConfig,
     private readonly schedulerRegistry: SchedulerRegistry,
     private readonly codeService: CodeService,
+    private readonly notificationService: NotificationService,
   ) {
     this.api = this.setupAxiosInstance();
   }
@@ -194,6 +196,10 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
         this.logger.debug(
           `Conversation id ${conversation.id} already has codes assigned`,
         );
+        this.notificationService.notify(
+          `Conversation id ${conversation.id} from ${conversation.subject.participant_name} already has codes assigned, but found new message`,
+          ['allegroLokalnie', 'sell', 'code', 'warning'],
+        );
         return false;
       }
 
@@ -206,6 +212,10 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
         await this.sendMessage(
           conversation.id,
           'Dziekuje za zakup! Kod zostanie wyslany w ciagu maksymalnie kilku godzin.',
+        );
+        this.notificationService.notify(
+          `Conversation id ${conversation.id} from ${conversation.subject.participant_name} no code offer found - ${conversation.subject.first_item_title}`,
+          ['allegroLokalnie', 'sell', 'code', 'warning'],
         );
         return false;
       }
@@ -221,6 +231,10 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
       );
 
       if (isCorrectMessageSent) {
+        this.notificationService.notify(
+          `Conversation id ${conversation.id} from ${conversation.subject.participant_name} correct message was already sent`,
+          ['allegroLokalnie', 'sell', 'code', 'warning'],
+        );
         return false;
       }
 
@@ -230,8 +244,16 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
       );
 
       await this.sendMessage(conversation.id, messageWithCode);
+      this.notificationService.notify(
+        `Conversation id ${conversation.id} from ${conversation.subject.participant_name} bought ${conversation.subject.first_item_title} and code was sent`,
+        ['allegroLokalnie', 'sell', 'code'],
+      );
     } catch (error) {
       this.logger.error('Failed to process conversation:', error);
+      this.notificationService.notify(
+        `Conversation id ${conversation.id} from ${conversation.subject.participant_name} - ${conversation.subject.first_item_title} failed to process conversation`,
+        ['allegroLokalnie', 'sell', 'code', 'warning'],
+      );
     }
   }
 

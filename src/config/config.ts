@@ -7,5 +7,10 @@ export default (): Record<string, unknown> => ({
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
   },
+  telegram: {
+    token: process.env.TELEGRAM_BOT_TOKEN,
+    chatId: process.env.TELEGRAM_CHAT_ID,
+  },
+  ntfyUrl: process.env.NTFY_URL,
   NODE_ENV: process.env.NODE_ENV,
 });
