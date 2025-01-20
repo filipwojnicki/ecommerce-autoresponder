@@ -185,6 +185,10 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
       );
 
       if (!isBuyNowTransaction) {
+        this.notificationService.notify(
+          `Conversation id ${conversation.id} from ${conversation.subject.participant_name}`,
+          ['allegroLokalnie', 'conversation', 'warning'],
+        );
         return false;
       }
 
