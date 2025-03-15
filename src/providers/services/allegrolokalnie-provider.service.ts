@@ -185,10 +185,11 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
       );
 
       if (!isBuyNowTransaction) {
-        this.notificationService.notify(
-          `Conversation id ${conversation.id} from ${conversation.subject.participant_name}`,
-          ['allegroLokalnie', 'conversation', 'warning'],
-        );
+        await this.notificationService.notifyAllegroLokalnie({
+          conversationId: conversation.id,
+          userName: conversation.subject.participant_name,
+          offerTitle: conversation.subject.first_item_title,
+        });
         return false;
       }
 
@@ -200,10 +201,12 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
         this.logger.debug(
           `Conversation id ${conversation.id} already has codes assigned`,
         );
-        this.notificationService.notify(
-          `Conversation id ${conversation.id} from ${conversation.subject.participant_name} already has codes assigned, but found new message`,
-          ['allegroLokalnie', 'sell', 'code', 'warning'],
-        );
+        await this.notificationService.notifyAllegroLokalnie({
+          conversationId: conversation.id,
+          userName: conversation.subject.participant_name,
+          offerTitle: conversation.subject.first_item_title,
+          error: 'already has codes assigned, but found new message',
+        });
         return false;
       }
 
@@ -215,12 +218,14 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
         this.logger.warn(`${conversation.id}: No available offer found`);
         await this.sendMessage(
           conversation.id,
-          'Dziekuje za zakup! Kod zostanie wyslany w ciagu maksymalnie kilku godzin.',
+          'Dziekuje za zakup! Zakup zostanie wyslany w ciagu maksymalnie kilku godzin.',
         );
-        this.notificationService.notify(
-          `Conversation id ${conversation.id} from ${conversation.subject.participant_name} no code offer found - ${conversation.subject.first_item_title}`,
-          ['allegroLokalnie', 'sell', 'code', 'warning'],
-        );
+        await this.notificationService.notifyAllegroLokalnie({
+          conversationId: conversation.id,
+          userName: conversation.subject.participant_name,
+          offerTitle: conversation.subject.first_item_title,
+          error: 'no code offer found',
+        });
         return false;
       }
 
@@ -235,29 +240,35 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
       );
 
       if (isCorrectMessageSent) {
-        this.notificationService.notify(
-          `Conversation id ${conversation.id} from ${conversation.subject.participant_name} correct message was already sent`,
-          ['allegroLokalnie', 'sell', 'code', 'warning'],
-        );
+        await this.notificationService.notifyAllegroLokalnie({
+          conversationId: conversation.id,
+          userName: conversation.subject.participant_name,
+          offerTitle: conversation.subject.first_item_title,
+          error: 'correct message was already sent',
+        });
         return false;
       }
 
-      const messageWithCode = await this.codeService.getUniqueCodeWithMessage(
+      const offerCode = await this.codeService.getUniqueCodeWithMessage(
         conversation.id,
         offer,
       );
 
-      await this.sendMessage(conversation.id, messageWithCode);
-      this.notificationService.notify(
-        `Conversation id ${conversation.id} from ${conversation.subject.participant_name} bought ${conversation.subject.first_item_title} and code was sent`,
-        ['allegroLokalnie', 'sell', 'code'],
-      );
+      await this.sendMessage(conversation.id, offerCode.message);
+      await this.notificationService.notifyAllegroLokalnie({
+        conversationId: conversation.id,
+        userName: conversation.subject.participant_name,
+        offerTitle: conversation.subject.first_item_title,
+        code: offerCode.code,
+      });
     } catch (error) {
       this.logger.error('Failed to process conversation:', error);
-      this.notificationService.notify(
-        `Conversation id ${conversation.id} from ${conversation.subject.participant_name} - ${conversation.subject.first_item_title} failed to process conversation`,
-        ['allegroLokalnie', 'sell', 'code', 'warning'],
-      );
+      await this.notificationService.notifyAllegroLokalnie({
+        conversationId: conversation.id,
+        userName: conversation.subject.participant_name,
+        offerTitle: conversation.subject.first_item_title,
+        error: 'Failed to generate unique code',
+      });
     }
   }
 
@@ -433,6 +444,10 @@ export class AllegroLokalnieProviderService implements IEcommerceProvider {
 
     if (this.failureCount >= this.MAX_FAILURES) {
       this.stopCronJob();
+      this.notificationService.notify(
+        `Allegro Lokalnie provider failed to check messages ${this.failureCount} times`,
+        ['allegroLokalnie', 'error'],
+      );
     }
   }
 

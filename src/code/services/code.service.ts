@@ -36,7 +36,10 @@ export class CodeService {
     });
   }
 
-  async getUniqueCodeWithMessage(conversationId: string, offer: CodeOffer) {
+  async getUniqueCodeWithMessage(
+    conversationId: string,
+    offer: CodeOffer,
+  ): Promise<null | { message: string; code: string }> {
     let retryCount = 0;
 
     this.logger.debug(`${conversationId}: Getting unique code`);
@@ -56,7 +59,10 @@ export class CodeService {
         if (!code) {
           await transaction.rollback();
           this.logger.warn(`${conversationId}: No available code found`);
-          return `Dziekuje za zakup! ${offer.messageFailed}`;
+          return {
+            message: `Dziekuje za zakup! ${offer.messageFailed}`,
+            code: null,
+          };
         }
 
         const message = `Dziekuje za zakup! Kod: ${code.code}. ${offer.messageCorrect ?? ''}`;
@@ -74,7 +80,7 @@ export class CodeService {
 
         this.logger.debug(`${conversationId}: Reserved code ${code.code}`);
 
-        return message;
+        return { message, code: code.code };
       } catch (error) {
         await transaction?.rollback();
         retryCount++;

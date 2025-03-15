@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { INotificationProvider } from '../types';
 import { TelegramProvider, NtfyProvider } from '../providers';
+import { AllegroLokalnieTemplate } from '../templates';
 
 @Injectable()
 export class NotificationService {
@@ -10,10 +11,11 @@ export class NotificationService {
   constructor(
     private readonly telegramProvider: TelegramProvider,
     private readonly ntfyProvider: NtfyProvider,
+    private readonly allegroTemplate: AllegroLokalnieTemplate,
   ) {}
 
   onModuleInit() {
-    this.providers = [this.telegramProvider, this.ntfyProvider];
+    this.providers = [this.ntfyProvider, this.telegramProvider];
   }
 
   async notify(message: string, tags?: string[]): Promise<void> {
@@ -29,5 +31,16 @@ export class NotificationService {
         }
       }),
     );
+  }
+
+  async notifyAllegroLokalnie(params: {
+    conversationId: string;
+    userName: string;
+    offerTitle?: string;
+    code?: string;
+    error?: string;
+  }): Promise<void> {
+    const message = this.allegroTemplate.render(params);
+    await this.notify(message, ['allegrolokalnie']);
   }
 }
